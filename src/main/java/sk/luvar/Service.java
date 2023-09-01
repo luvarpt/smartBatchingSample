@@ -8,9 +8,11 @@ import com.lmax.disruptor.dsl.ProducerType;
 import com.lmax.disruptor.util.DaemonThreadFactory;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadFactory;
+import java.util.function.Consumer;
 
 @Slf4j
 public class Service {
@@ -31,38 +33,52 @@ public class Service {
         ringBuffer = disruptor.start();
     }
 
-    public void add(String username) {
+    /**
+     * Simple internal method to place request to the queue.
+     * <p>
+     * Method will request next free {@link ServiceEvent} from disruptors ringbuffer (a.k.a. processing FIFO queue),
+     * than apply your passed lambda (which should set-up request) and after it, finally publishes given request
+     * to the processing.
+     *
+     * @param serviceEventSettingLambda do make your request on passed instance in lambda. It will be published
+     *                                  to the queue
+     */
+    private void makeEventRequest(Consumer<ServiceEvent> serviceEventSettingLambda) {
         final long sequenceId = ringBuffer.next();
-        final UnionedServiceEvent serviceEvent = ringBuffer.get(sequenceId);
-        serviceEvent.addUser(username);
-        ringBuffer.publish(sequenceId);
+        try {
+            final ServiceEvent serviceEvent = ringBuffer.get(sequenceId);
+            serviceEventSettingLambda.accept(serviceEvent);
+        } finally {
+            ringBuffer.publish(sequenceId);
+        }
     }
 
-    public void printAll() {
+    public void add(String username) {
+        makeEventRequest(se -> se.addUser(username));
+    }
+
+    public void printAllUsingBarrier() {
         this.waitTillNewBarrierProcessed();
         throw new RuntimeException("NotImplementedYet! this.userRepository.findAll().foreach.print");
         // TODO this.userRepository.findAll().foreach.print
     }
 
+    /**
+     * Non-usual approach to get data using command. Instead of using query path from CQRS pattern, we use command here.
+     */
+    public void printAllUsingCommand() throws ExecutionException, InterruptedException {
+        final CompletableFuture<List<UserDTO>> dataHolder = new CompletableFuture<>();
+        this.makeEventRequest(serviceEvent -> serviceEvent.getAllData(dataHolder));
+        dataHolder.get().forEach(System.out::println);
+    }
+
     public void deleteAll() {
-        final long sequenceId = ringBuffer.next();
-        final UnionedServiceEvent serviceEvent = ringBuffer.get(sequenceId);
-        serviceEvent.deleteAll();
-        ringBuffer.publish(sequenceId);
+        this.makeEventRequest(ServiceEvent::deleteAll);
     }
 
     private void waitTillNewBarrierProcessed() {
-        final long sequenceId = ringBuffer.next();
         final CompletableFuture<Void> barrierToComplete = new CompletableFuture<>();
-
-        try {
-            final UnionedServiceEvent serviceEvent = ringBuffer.get(sequenceId);
-            // Pass own instance to get "result", i.e. signal of processed event (command)
-            serviceEvent.resetBarrier(barrierToComplete);
-            log.debug("Going to publish barrier command.");
-        } finally {
-            ringBuffer.publish(sequenceId);
-        }
+        this.makeEventRequest(se -> se.resetBarrier(barrierToComplete));
 
         try {
             log.debug("Going to wait till barrier command is processed (and all commands issued before it).");
