@@ -4,6 +4,7 @@ import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.Sequence;
 
 import java.util.ArrayList;
+import java.util.Objects;
 
 public class BatchingEventHandler implements EventHandler<UnionedServiceEvent> {
     /**
@@ -11,7 +12,7 @@ public class BatchingEventHandler implements EventHandler<UnionedServiceEvent> {
      */
     public static final int MAXIMUM_BATCH_SIZE = 20;
     private Sequence sequenceCallback;
-    private final ArrayList<UnionedServiceEvent> internalBatch = new ArrayList(25);
+    private final ArrayList<UnionedServiceEvent> internalBatch = new ArrayList<>(25);
     //private int currentBatchRemaining = 20;
 
     @Override
@@ -36,10 +37,10 @@ public class BatchingEventHandler implements EventHandler<UnionedServiceEvent> {
         boolean internalBatchMaximumSizeReached = this.internalBatch.size() >= MAXIMUM_BATCH_SIZE;
         if (internalBatchMaximumSizeReached || forceEnd) {
             // DO actual I/O operation with all instances.
-            System.out.println("Processed %s events in single batch.".formatted(this.internalBatch.size()));
+            System.out.printf("Processed %s events in single batch.%n", this.internalBatch.size());
             this.internalBatch.forEach(se -> {
-                switch (se.getOperationType()) {
-                    case BARRIER -> se.processingFinished();
+                if (Objects.requireNonNull(se.getOperationType()) == OperationType.BARRIER) {
+                    se.processingFinished();
                 }
             });
             this.internalBatch.clear();

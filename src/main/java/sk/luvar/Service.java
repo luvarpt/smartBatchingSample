@@ -1,7 +1,6 @@
 package sk.luvar;
 
 import com.lmax.disruptor.BlockingWaitStrategy;
-import com.lmax.disruptor.DataProvider;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.WaitStrategy;
 import com.lmax.disruptor.dsl.Disruptor;
@@ -17,13 +16,6 @@ import java.util.concurrent.ThreadFactory;
 public class Service {
     final RingBuffer<UnionedServiceEvent> ringBuffer;
     final Disruptor<UnionedServiceEvent> disruptor;
-
-    private final DataProvider<UnionedServiceEvent> internalDataProvider = new DataProvider<>() {
-        @Override
-        public UnionedServiceEvent get(long sequence) {
-            return ringBuffer.get(sequence);
-        }
-    };
 
     public Service() {
         final ThreadFactory threadFactory = DaemonThreadFactory.INSTANCE;
@@ -42,7 +34,7 @@ public class Service {
     public void add(String username) {
         final long sequenceId = ringBuffer.next();
         final UnionedServiceEvent serviceEvent = ringBuffer.get(sequenceId);
-        // TODO prepare operation data. serviceEvent.setValue(eventCount);
+        serviceEvent.addUser(username);
         ringBuffer.publish(sequenceId);
     }
 

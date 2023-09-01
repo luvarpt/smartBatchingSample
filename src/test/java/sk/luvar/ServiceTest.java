@@ -12,12 +12,4 @@ class ServiceTest {
         service.deleteAll();
         service.shutdown();
     }
-
-    @Example
-    void printAll() {
-    }
-
-    @Example
-    void deleteAll() {
-    }
 }
