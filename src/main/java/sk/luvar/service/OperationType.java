@@ -1,4 +1,4 @@
-package sk.luvar;
+package sk.luvar.service;
 
 public enum OperationType {
     NOOP,

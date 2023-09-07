@@ -1,4 +1,4 @@
-package sk.luvar;
+package sk.luvar.service;
 
 import com.lmax.disruptor.BlockingWaitStrategy;
 import com.lmax.disruptor.RingBuffer;
@@ -6,6 +6,7 @@ import com.lmax.disruptor.WaitStrategy;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
 import com.lmax.disruptor.util.DaemonThreadFactory;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
@@ -14,12 +15,16 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.function.Consumer;
 
+@RequiredArgsConstructor
 @Slf4j
-public class Service {
+public class Service<P extends UserPersist> {
     final RingBuffer<UnionedServiceEvent> ringBuffer;
     final Disruptor<UnionedServiceEvent> disruptor;
 
-    public Service() {
+    final P userPersist;
+
+    public Service(P userPersist) {
+        this.userPersist = userPersist;
         final ThreadFactory threadFactory = DaemonThreadFactory.INSTANCE;
         final WaitStrategy waitStrategy = new BlockingWaitStrategy();
         this.disruptor = new Disruptor<>(
@@ -29,7 +34,7 @@ public class Service {
                 ProducerType.SINGLE,
                 waitStrategy);
         //disruptor.handleEventsWith(getEventHandler());
-        disruptor.handleEventsWith(new BatchingEventHandler());
+        disruptor.handleEventsWith(new BatchingEventHandler<>(this.userPersist));
         ringBuffer = disruptor.start();
     }
 
@@ -57,19 +62,26 @@ public class Service {
         makeEventRequest(se -> se.addUser(username));
     }
 
-    public void printAllUsingBarrier() {
+    /**
+     * Standard approach to get data with some barrier. There is basically NOOP command, which does serve as barrier and
+     * when this command is applied, read directly from storage is made.
+     *
+     * @return immutable snapshot of all users in storage
+     */
+    public List<UserDTO> getAllUsingBarrier() {
         this.waitTillNewBarrierProcessed();
-        throw new RuntimeException("NotImplementedYet! this.userRepository.findAll().foreach.print");
-        // TODO this.userRepository.findAll().foreach.print
+        return this.userPersist.getAllBlocking();
     }
 
     /**
      * Non-usual approach to get data using command. Instead of using query path from CQRS pattern, we use command here.
+     *
+     * @return immutable snapshot of all users in storage
      */
-    public void printAllUsingCommand() throws ExecutionException, InterruptedException {
+    public List<UserDTO> getAllUsingCommand() throws ExecutionException, InterruptedException {
         final CompletableFuture<List<UserDTO>> dataHolder = new CompletableFuture<>();
         this.makeEventRequest(serviceEvent -> serviceEvent.getAllData(dataHolder));
-        dataHolder.get().forEach(System.out::println);
+        return dataHolder.get();
     }
 
     public void deleteAll() {

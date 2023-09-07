@@ -1,4 +1,4 @@
-package sk.luvar;
+package sk.luvar.service;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;

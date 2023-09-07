@@ -1,21 +1,24 @@
-package sk.luvar;
+package sk.luvar.service;
 
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.Sequence;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.List;
 
+@RequiredArgsConstructor
 @Slf4j
-public class BatchingEventHandler implements EventHandler<UnionedServiceEvent> {
+public class BatchingEventHandler<P extends UserPersist> implements EventHandler<UnionedServiceEvent> {
     /**
      * Maximum events to process at once. This is upper cap for smart batch size.
      */
     public static final int MAXIMUM_BATCH_SIZE = 20;
     private Sequence sequenceCallback;
     private final ArrayList<UnionedServiceEvent> internalBatch = new ArrayList<>(MAXIMUM_BATCH_SIZE + 1);
-    //private int currentBatchRemaining = 20;
+
+    final P userPersist;
 
     @Override
     public void setSequenceCallback(final Sequence sequenceCallback) {
@@ -24,6 +27,7 @@ public class BatchingEventHandler implements EventHandler<UnionedServiceEvent> {
 
     @Override
     public void onEvent(final UnionedServiceEvent event, final long sequence, final boolean endOfBatch) {
+        // DO actual batching, batch only add user things (as they are only designed that way for now).
         this.internalBatch.add(event);
 
         boolean logicalChunkOfWorkComplete = isLogicalChunkOfWorkComplete(endOfBatch);
@@ -42,12 +46,11 @@ public class BatchingEventHandler implements EventHandler<UnionedServiceEvent> {
             System.out.printf("Processed %s events in single batch.%n", this.internalBatch.size());
             this.internalBatch.forEach(se -> {
                 switch (se.getOperationType()) {
-                    case NOOP -> {
-                    }
+                    case NOOP -> {}
                     case BARRIER -> se.processingFinished();
-                    case ADD_USER -> System.out.println("Insert into DB: " + se.getNewUserName());
-                    case DELETE_ALL -> System.out.println("Delete all from DB");
-                    case GET_ALL_USERS -> se.getDataHolderForRead().complete(List.of(new UserDTO("NOT IMPLEMENTED")));
+                    case ADD_USER -> userPersist.saveUsers(List.of(se.getNewUserName()));
+                    case DELETE_ALL -> userPersist.deleteAll();
+                    case GET_ALL_USERS -> se.getDataHolderForRead().complete(userPersist.getAllBlocking());
                     default -> log.warn("Unknown operation type! Implement it! type:{}.", se.getOperationType());
                 }
             });

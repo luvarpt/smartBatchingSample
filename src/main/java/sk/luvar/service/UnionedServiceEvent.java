@@ -1,4 +1,4 @@
-package sk.luvar;
+package sk.luvar.service;
 
 import com.lmax.disruptor.EventFactory;
 import lombok.Getter;
